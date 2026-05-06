@@ -12,33 +12,6 @@ const errorHandler = (err, req, res, next) => {
     timestamp: new Date().toISOString()
   });
 
-  // Mongoose validation error
-  if (err.name === 'ValidationError') {
-    const message = Object.values(err.errors).map(val => val.message).join(', ');
-    error = {
-      statusCode: 400,
-      message: `Validation Error: ${message}`
-    };
-  }
-
-  // Mongoose duplicate key error
-  if (err.code === 11000) {
-    const message = 'Duplicate field value entered';
-    error = {
-      statusCode: 400,
-      message
-    };
-  }
-
-  // Mongoose cast error
-  if (err.name === 'CastError') {
-    const message = 'Resource not found';
-    error = {
-      statusCode: 404,
-      message
-    };
-  }
-
   // JWT errors
   if (err.name === 'JsonWebTokenError') {
     error = {
