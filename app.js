@@ -51,7 +51,9 @@ app.use(cors({
     // Allow requests with no origin (mobile apps, curl, Postman)
     if (!origin) return callback(null, true);
 
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    // Allow any localhost port in development
+    const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+    if (isLocalhost || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
       callback(null, false); // return false instead of throwing — avoids 500
@@ -72,12 +74,14 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 const visitorRoutes = require('./routes/visitors');
 const contactRoutes = require('./routes/contacts');
 const reviewRoutes = require('./routes/reviews');
+const projectRoutes = require('./routes/projects');
 const adminRoutes = require('./routes/admin');
 
 // Use routes
 app.use('/api/track-visit', visitorRoutes);
 app.use('/api/submit-form', contactRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/projects', projectRoutes);
 app.use('/api/admin', adminRoutes);
 
 // Handle OPTIONS requests for all routes

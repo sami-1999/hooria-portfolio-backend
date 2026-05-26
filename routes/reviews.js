@@ -31,13 +31,9 @@ router.get('/admin', async (req, res) => {
     })
   } catch (error) {
     console.error('Error fetching admin reviews:', error)
-    // Temporary fallback to confirm the issue
-    res.json({
-      success: true,
-      data: [
-        { id: '1', name: 'Sarah Jenkins', rating: 5, message: 'Exceptional work!', approved: true, created_at: new Date().toISOString() },
-        { id: '2', name: 'Marcus Thorne', rating: 5, message: 'Professional, creative...', approved: true, created_at: new Date().toISOString() }
-      ]
+    res.status(500).json({ 
+      success: false,
+      message: 'Error fetching reviews' 
     })
   }
 })
