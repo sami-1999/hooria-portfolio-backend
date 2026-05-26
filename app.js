@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
+const path = require('path');
 const errorHandler = require('./config/errorHandler');
 
 const app = express();
@@ -69,6 +70,9 @@ app.use(cors({
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Static uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Import routes
 const visitorRoutes = require('./routes/visitors');
