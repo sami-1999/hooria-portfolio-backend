@@ -7,16 +7,23 @@ const SupabaseService = require('../services/supabaseService')
 // Validate JWT secret is available
 const JWT_SECRET = process.env.JWT_SECRET
 if (!JWT_SECRET || JWT_SECRET.length < 32) {
-  console.error('❌ Invalid JWT secret configuration')
-  throw new Error('JWT_SECRET must be configured and at least 32 characters')
+  console.error('❌ Invalid JWT secret configuration — admin routes will return 503')
 }
 
 // Admin credentials (in production, store in database)
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@hooria.com'
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123456'
 
+// Guard middleware for misconfigured JWT secret
+const requireJwtSecret = (_req, res, next) => {
+  if (!JWT_SECRET || JWT_SECRET.length < 32) {
+    return res.status(503).json({ success: false, message: 'Admin routes not configured (JWT_SECRET missing)' })
+  }
+  next()
+}
+
 // POST /api/admin/login - Admin login
-router.post('/login', async (req, res) => {
+router.post('/login', requireJwtSecret, async (req, res) => {
   try {
     const { email, password } = req.body
 
