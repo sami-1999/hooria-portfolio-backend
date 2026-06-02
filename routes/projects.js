@@ -1,18 +1,7 @@
 const express = require('express')
-const multer = require('multer')
 const router = express.Router()
 const SupabaseService = require('../services/supabaseService')
-const { uploadVideo, deleteVideo } = require('../utils/storageUpload')
-
-// Memory storage — no disk writes, file stays in req.file.buffer
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB
-  fileFilter: (_req, file, cb) => {
-    if ((file.mimetype || '').startsWith('video/')) return cb(null, true)
-    cb(new Error('Only video files are allowed'))
-  },
-})
+const { createSignedUploadUrl, deleteVideo } = require('../utils/storageUpload')
 
 const normalizeTags = (tags) => {
   if (Array.isArray(tags)) return tags
@@ -42,6 +31,32 @@ const normalizeVideoSource = (value, youtubeUrl, uploadedUrl) => {
   return 'youtube'
 }
 
+// POST /api/projects/upload-url
+// Step 1 of video upload: frontend asks for a signed URL, then uploads directly to Supabase.
+// This bypasses Vercel's 4.5MB serverless body limit entirely.
+router.post('/upload-url', async (req, res) => {
+  try {
+    const { filename } = req.body
+    if (!filename) {
+      return res.status(400).json({ success: false, message: 'filename is required' })
+    }
+
+    const result = await createSignedUploadUrl(filename)
+
+    res.json({
+      success: true,
+      data: {
+        signedUrl: result.signedUrl, // frontend PUTs the video file to this URL
+        publicUrl: result.publicUrl, // frontend sends this back when creating the project
+        path: result.path,
+      },
+    })
+  } catch (error) {
+    console.error('Error generating upload URL:', error)
+    res.status(500).json({ success: false, message: 'Error generating upload URL' })
+  }
+})
+
 // GET /api/projects
 router.get('/', async (_req, res) => {
   try {
@@ -65,11 +80,13 @@ router.get('/admin', async (_req, res) => {
 })
 
 // POST /api/projects
-router.post('/', upload.single('uploaded_video_file'), async (req, res) => {
+// Receives uploaded_video_url as a plain string (already uploaded to Supabase by the frontend)
+router.post('/', async (req, res) => {
   try {
     const {
       title, category, description, duration, aspect_ratio,
-      tags, active, project_type, type, video_source, youtube_url, video_url,
+      tags, active, project_type, type,
+      video_source, youtube_url, video_url, uploaded_video_url,
     } = req.body || {}
 
     if (!title || !category || !description) {
@@ -78,20 +95,14 @@ router.post('/', upload.single('uploaded_video_file'), async (req, res) => {
 
     const finalProjectType = normalizeProjectType(project_type || type)
     const finalYoutubeUrl = (youtube_url || video_url || '').trim()
-
-    // Upload file to Supabase Storage if provided
-    let uploadedVideoUrl = ''
-    if (req.file) {
-      uploadedVideoUrl = await uploadVideo(req.file.buffer, req.file.originalname, req.file.mimetype)
-    }
-
-    const finalVideoSource = normalizeVideoSource(video_source, finalYoutubeUrl, uploadedVideoUrl)
+    const finalUploadedUrl = (uploaded_video_url || '').trim()
+    const finalVideoSource = normalizeVideoSource(video_source, finalYoutubeUrl, finalUploadedUrl)
 
     if (finalVideoSource === 'youtube' && !finalYoutubeUrl) {
       return res.status(400).json({ success: false, message: 'YouTube URL is required when video source is youtube' })
     }
-    if (finalVideoSource === 'upload' && !uploadedVideoUrl) {
-      return res.status(400).json({ success: false, message: 'Please upload a video file' })
+    if (finalVideoSource === 'upload' && !finalUploadedUrl) {
+      return res.status(400).json({ success: false, message: 'uploaded_video_url is required when video source is upload' })
     }
 
     const project = await SupabaseService.create('projects', {
@@ -100,7 +111,7 @@ router.post('/', upload.single('uploaded_video_file'), async (req, res) => {
       project_type: finalProjectType,
       video_source: finalVideoSource,
       youtube_url: finalVideoSource === 'youtube' ? finalYoutubeUrl : '',
-      uploaded_video_url: finalVideoSource === 'upload' ? uploadedVideoUrl : '',
+      uploaded_video_url: finalVideoSource === 'upload' ? finalUploadedUrl : '',
       description,
       duration: duration || 'N/A',
       aspect_ratio: aspect_ratio || '16:9',
@@ -116,7 +127,7 @@ router.post('/', upload.single('uploaded_video_file'), async (req, res) => {
 })
 
 // PUT /api/projects/:id
-router.put('/:id', upload.single('uploaded_video_file'), async (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const project = await SupabaseService.findById('projects', req.params.id, true)
     if (!project) {
@@ -138,23 +149,16 @@ router.put('/:id', upload.single('uploaded_video_file'), async (req, res) => {
     const incomingType = payload.project_type || payload.type
     if (incomingType !== undefined) updateData.project_type = normalizeProjectType(incomingType)
 
-    const youtubeIncoming = (payload.youtube_url || payload.video_url || '').trim()
-
-    // Upload new file to Supabase Storage if provided
-    let newUploadedUrl = ''
-    if (req.file) {
-      newUploadedUrl = await uploadVideo(req.file.buffer, req.file.originalname, req.file.mimetype)
-    }
-
     const videoFieldChanged =
       payload.video_source !== undefined ||
       payload.youtube_url !== undefined ||
       payload.video_url !== undefined ||
-      payload.uploaded_video_url !== undefined ||
-      req.file
+      payload.uploaded_video_url !== undefined
 
     if (videoFieldChanged) {
-      const resolvedSource = normalizeVideoSource(payload.video_source, youtubeIncoming, newUploadedUrl)
+      const youtubeIncoming = (payload.youtube_url || payload.video_url || '').trim()
+      const uploadIncoming = (payload.uploaded_video_url || '').trim()
+      const resolvedSource = normalizeVideoSource(payload.video_source, youtubeIncoming, uploadIncoming)
       updateData.video_source = resolvedSource
 
       if (resolvedSource === 'youtube') {
@@ -164,15 +168,16 @@ router.put('/:id', upload.single('uploaded_video_file'), async (req, res) => {
         }
         updateData.youtube_url = yt
         updateData.uploaded_video_url = ''
-        // Remove old uploaded file from storage
         if (project.uploaded_video_url) await deleteVideo(project.uploaded_video_url)
       } else {
-        const up = newUploadedUrl || project.uploaded_video_url || ''
+        const up = uploadIncoming || project.uploaded_video_url || ''
         if (!up) {
-          return res.status(400).json({ success: false, message: 'Please upload a video file' })
+          return res.status(400).json({ success: false, message: 'uploaded_video_url is required when video source is upload' })
         }
-        // Remove old file if a new one was uploaded
-        if (newUploadedUrl && project.uploaded_video_url) await deleteVideo(project.uploaded_video_url)
+        // Delete old file if it's being replaced
+        if (uploadIncoming && project.uploaded_video_url && uploadIncoming !== project.uploaded_video_url) {
+          await deleteVideo(project.uploaded_video_url)
+        }
         updateData.uploaded_video_url = up
         updateData.youtube_url = ''
       }
@@ -194,7 +199,6 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Project not found' })
     }
 
-    // Remove video from storage before deleting the record
     if (project.uploaded_video_url) await deleteVideo(project.uploaded_video_url)
 
     await SupabaseService.delete('projects', req.params.id, true)
