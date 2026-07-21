@@ -1,31 +1,40 @@
 const express = require('express')
 const path = require('path')
-const fs = require('fs')
 const multer = require('multer')
 const router = express.Router()
 const SupabaseService = require('../services/supabaseService')
 
-const uploadsDir = path.join(__dirname, '..', 'uploads', 'projects')
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true })
-}
+const VIDEO_BUCKET = process.env.SUPABASE_VIDEO_BUCKET || 'videos'
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadsDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || '').toLowerCase() || '.mp4'
-    cb(null, `project-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`)
-  }
-})
-
+// Vercel serverless functions have a read-only filesystem, so uploaded
+// videos are kept in memory and pushed straight to Supabase Storage
+// instead of being written to local disk.
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 200 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if ((file.mimetype || '').startsWith('video/')) return cb(null, true)
     cb(new Error('Only video files are allowed'))
   }
 })
+
+const uploadVideoToStorage = async (file) => {
+  const ext = path.extname(file.originalname || '').toLowerCase() || '.mp4'
+  const filename = `project-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`
+
+  const client = SupabaseService.getAdminClient()
+  const { error } = await client.storage
+    .from(VIDEO_BUCKET)
+    .upload(filename, file.buffer, {
+      contentType: file.mimetype || 'video/mp4',
+      upsert: false
+    })
+
+  if (error) throw error
+
+  const { data } = client.storage.from(VIDEO_BUCKET).getPublicUrl(filename)
+  return data.publicUrl
+}
 
 const normalizeTags = (tags) => {
   if (Array.isArray(tags)) return tags
@@ -105,9 +114,9 @@ router.post('/', upload.single('uploaded_video_file'), async (req, res) => {
     }
 
     const finalProjectType = normalizeProjectType(project_type || type)
-    const filePath = req.file ? `/uploads/projects/${req.file.filename}` : ''
+    const uploadedFileUrl = req.file ? await uploadVideoToStorage(req.file) : ''
     const finalYoutubeUrl = (youtube_url || video_url || '').trim()
-    const finalUploadedVideoUrl = (uploaded_video_url || filePath || '').trim()
+    const finalUploadedVideoUrl = (uploaded_video_url || uploadedFileUrl || '').trim()
     const finalVideoSource = normalizeVideoSource(video_source, finalYoutubeUrl, finalUploadedVideoUrl)
 
     if (finalVideoSource === 'youtube' && !finalYoutubeUrl) {
@@ -164,9 +173,9 @@ router.put('/:id', upload.single('uploaded_video_file'), async (req, res) => {
       updateData.project_type = normalizeProjectType(incomingProjectType)
     }
 
-    const filePath = req.file ? `/uploads/projects/${req.file.filename}` : ''
+    const uploadedFileUrl = req.file ? await uploadVideoToStorage(req.file) : ''
     const youtubeIncoming = (payload.youtube_url || payload.video_url || '').trim()
-    const uploadIncoming = (payload.uploaded_video_url || filePath || '').trim()
+    const uploadIncoming = (payload.uploaded_video_url || uploadedFileUrl || '').trim()
     const resolvedSource = normalizeVideoSource(payload.video_source, youtubeIncoming, uploadIncoming)
 
     if (payload.video_source !== undefined || payload.youtube_url !== undefined || payload.video_url !== undefined || payload.uploaded_video_url !== undefined || req.file) {

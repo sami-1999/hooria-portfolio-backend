@@ -140,6 +140,22 @@ npm run dev
 npm run prod
 ```
 
+### 9. **Video Storage Bucket (Project Videos Upload)**
+
+Backend Vercel per serverless run hota hai jiska filesystem read-only hota hai, is liye admin panel se upload ki gayi videos local disk ke bajaye Supabase Storage (bucket name: `videos`) mein save hoti hain.
+
+Ye bucket already project mein maujood hai — bas confirm kar lein ke wo **Public** hai (Dashboard → Storage → `videos` bucket → bucket settings mein "Public bucket" ON hona chahiye), warna frontend per video play nahi hogi.
+
+Agar bucket ka naam `videos` ke ilawa kuch rakhna hai to `.env` mein ye variable add karein:
+
+```env
+SUPABASE_VIDEO_BUCKET=your-bucket-name
+```
+
+Public bucket ke liye extra RLS policy ki zarurat nahi (backend hamesha `service_role` key se upload karta hai jo RLS bypass karti hai).
+
+**Note:** Vercel Hobby plan per har request ka body size ~4.5MB tak limited hota hai. Bari (uncompressed) videos upload karne per request fail ho sakta hai — isi liye admin panel ab upload se pehle video ko browser mein compress karta hai.
+
 ## 🔍 Troubleshooting
 
 ### **Connection Issues**
