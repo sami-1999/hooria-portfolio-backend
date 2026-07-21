@@ -142,19 +142,13 @@ npm run prod
 
 ### 9. **Video Storage Bucket (Project Videos Upload)**
 
-Backend Vercel per serverless run hota hai jiska filesystem read-only hota hai, is liye admin panel se upload ki gayi videos local disk ke bajaye Supabase Storage (bucket name: `videos`) mein save hoti hain.
+Backend Vercel per serverless run hota hai jiska filesystem read-only hota hai, is liye admin panel se upload ki gayi videos local disk ke bajaye Supabase Storage (bucket name: `videos`, `utils/storageUpload.js` mein hardcoded) mein save hoti hain.
 
-Ye bucket already project mein maujood hai — bas confirm kar lein ke wo **Public** hai (Dashboard → Storage → `videos` bucket → bucket settings mein "Public bucket" ON hona chahiye), warna frontend per video play nahi hogi.
+Upload flow signed URLs se hota hai: frontend pehle `POST /api/projects/upload-url` call karta hai, backend ek signed upload URL deta hai, aur frontend seedha us URL per video PUT kar deta hai — video Vercel function se guzarti hi nahi, is liye body-size limit ka masla nahi aata.
 
-Agar bucket ka naam `videos` ke ilawa kuch rakhna hai to `.env` mein ye variable add karein:
+Bucket already project mein maujood hai aur **Public** hai (Dashboard → Storage → `videos` bucket → "Public bucket" ON), warna frontend per video play nahi hogi. Public bucket ke liye extra RLS policy ki zarurat nahi (backend hamesha `service_role` key se signed URL banata hai jo RLS bypass karti hai).
 
-```env
-SUPABASE_VIDEO_BUCKET=your-bucket-name
-```
-
-Public bucket ke liye extra RLS policy ki zarurat nahi (backend hamesha `service_role` key se upload karta hai jo RLS bypass karti hai).
-
-**Note:** Vercel Hobby plan per har request ka body size ~4.5MB tak limited hota hai. Bari (uncompressed) videos upload karne per request fail ho sakta hai — isi liye admin panel ab upload se pehle video ko browser mein compress karta hai.
+**Note:** Admin panel upload se pehle video ko browser mein bhi compress karta hai (chhoti file size, tez upload) — is se pehle ye bhi zaroori tha kyunki Vercel Hobby plan per request body ~4.5MB tak limited hoti hai, lekin signed-URL flow ki wajah se ab wo limit apply hi nahi hoti.
 
 ## 🔍 Troubleshooting
 
