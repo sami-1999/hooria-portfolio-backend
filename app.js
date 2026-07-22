@@ -22,17 +22,9 @@ app.use(
   })
 )
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: { success: false, error: 'Too many requests from this IP, please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-})
-app.use('/api/', limiter)
-
-// CORS
+// CORS — must run before the rate limiter so a 429 response still carries
+// CORS headers; otherwise the browser reports a generic "Failed to fetch"
+// instead of the actual rate-limit message.
 const allowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
@@ -58,6 +50,16 @@ app.use(
   })
 )
 
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { success: false, error: 'Too many requests from this IP, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+app.use('/api/', limiter)
+
 // Body parsers
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
@@ -74,12 +76,14 @@ const contactRoutes = require('./routes/contacts')
 const reviewRoutes = require('./routes/reviews')
 const projectRoutes = require('./routes/projects')
 const adminRoutes = require('./routes/admin')
+const settingsRoutes = require('./routes/settings')
 
 app.use('/api/track-visit', visitorRoutes)
 app.use('/api/submit-form', contactRoutes)
 app.use('/api/reviews', reviewRoutes)
 app.use('/api/projects', projectRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/settings', settingsRoutes)
 
 app.options('*', cors())
 
