@@ -25,7 +25,7 @@ const normalizeProjectType = (value) => {
 
 const normalizeVideoSource = (value, youtubeUrl, uploadedUrl) => {
   const source = String(value || '').trim().toLowerCase()
-  if (source === 'youtube' || source === 'upload') return source
+  if (['youtube', 'upload', 'drive'].includes(source)) return source
   if (youtubeUrl) return 'youtube'
   if (uploadedUrl) return 'upload'
   return 'youtube'
@@ -97,6 +97,7 @@ router.post('/', async (req, res) => {
     const finalProjectType = normalizeProjectType(project_type || type)
     const finalYoutubeUrl = (youtube_url || video_url || '').trim()
     const finalUploadedUrl = (uploaded_video_url || '').trim()
+    const finalDriveLink = (drive_link || '').trim()
     const finalVideoSource = normalizeVideoSource(video_source, finalYoutubeUrl, finalUploadedUrl)
 
     if (finalVideoSource === 'youtube' && !finalYoutubeUrl) {
@@ -104,6 +105,9 @@ router.post('/', async (req, res) => {
     }
     if (finalVideoSource === 'upload' && !finalUploadedUrl) {
       return res.status(400).json({ success: false, message: 'uploaded_video_url is required when video source is upload' })
+    }
+    if (finalVideoSource === 'drive' && !finalDriveLink) {
+      return res.status(400).json({ success: false, message: 'Drive link is required when video source is drive' })
     }
 
     const project = await SupabaseService.create('projects', {
@@ -118,7 +122,8 @@ router.post('/', async (req, res) => {
       aspect_ratio: aspect_ratio || '16:9',
       tags: normalizeTags(tags),
       active: active !== undefined ? active === true || active === 'true' : true,
-      drive_link: (drive_link || '').trim(),
+      // The video's location when video_source is 'drive'; empty otherwise.
+      drive_link: finalDriveLink,
     }, true)
 
     res.status(201).json({ success: true, message: 'Project created successfully', data: project })
@@ -181,7 +186,7 @@ router.put('/:id', async (req, res) => {
         updateData.youtube_url = yt
         updateData.uploaded_video_url = ''
         if (project.uploaded_video_url) await deleteVideo(project.uploaded_video_url)
-      } else {
+      } else if (resolvedSource === 'upload') {
         const up = uploadIncoming || project.uploaded_video_url || ''
         if (!up) {
           return res.status(400).json({ success: false, message: 'uploaded_video_url is required when video source is upload' })
@@ -192,6 +197,15 @@ router.put('/:id', async (req, res) => {
         }
         updateData.uploaded_video_url = up
         updateData.youtube_url = ''
+      } else {
+        // drive — the video itself lives at drive_link (already processed above)
+        const dl = updateData.drive_link !== undefined ? updateData.drive_link : (project.drive_link || '')
+        if (!dl) {
+          return res.status(400).json({ success: false, message: 'Drive link is required when video source is drive' })
+        }
+        updateData.youtube_url = ''
+        updateData.uploaded_video_url = ''
+        if (project.uploaded_video_url) await deleteVideo(project.uploaded_video_url)
       }
     }
 
