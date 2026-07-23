@@ -87,6 +87,7 @@ router.post('/', async (req, res) => {
       title, category, description, duration, aspect_ratio,
       tags, active, project_type, type,
       video_source, youtube_url, video_url, uploaded_video_url,
+      drive_link,
     } = req.body || {}
 
     if (!title || !category || !description) {
@@ -117,6 +118,7 @@ router.post('/', async (req, res) => {
       aspect_ratio: aspect_ratio || '16:9',
       tags: normalizeTags(tags),
       active: active !== undefined ? active === true || active === 'true' : true,
+      drive_link: (drive_link || '').trim(),
     }, true)
 
     res.status(201).json({ success: true, message: 'Project created successfully', data: project })
@@ -145,6 +147,16 @@ router.put('/:id', async (req, res) => {
     if (payload.aspectRatio !== undefined) updateData.aspect_ratio = payload.aspectRatio
     if (payload.active !== undefined) updateData.active = payload.active === true || payload.active === 'true'
     if (payload.tags !== undefined) updateData.tags = normalizeTags(payload.tags)
+
+    if (payload.drive_link !== undefined) {
+      const newDriveLink = (payload.drive_link || '').trim()
+      // deleteVideo() is a no-op for URLs that aren't from our storage bucket
+      // (e.g. an external Google Drive link), so this is safe either way.
+      if (project.drive_link && project.drive_link !== newDriveLink) {
+        await deleteVideo(project.drive_link)
+      }
+      updateData.drive_link = newDriveLink
+    }
 
     const incomingType = payload.project_type || payload.type
     if (incomingType !== undefined) updateData.project_type = normalizeProjectType(incomingType)
@@ -200,6 +212,7 @@ router.delete('/:id', async (req, res) => {
     }
 
     if (project.uploaded_video_url) await deleteVideo(project.uploaded_video_url)
+    if (project.drive_link) await deleteVideo(project.drive_link)
 
     await SupabaseService.delete('projects', req.params.id, true)
     res.json({ success: true, message: 'Project deleted successfully' })
