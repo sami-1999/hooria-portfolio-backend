@@ -90,8 +90,8 @@ router.post('/', async (req, res) => {
       drive_link,
     } = req.body || {}
 
-    if (!title || !category || !description) {
-      return res.status(400).json({ success: false, message: 'Title, category, and description are required' })
+    if (!title || !category) {
+      return res.status(400).json({ success: false, message: 'Title and category are required' })
     }
 
     const finalProjectType = normalizeProjectType(project_type || type)
@@ -117,7 +117,7 @@ router.post('/', async (req, res) => {
       video_source: finalVideoSource,
       youtube_url: finalVideoSource === 'youtube' ? finalYoutubeUrl : '',
       uploaded_video_url: finalVideoSource === 'upload' ? finalUploadedUrl : '',
-      description,
+      description: description || '',
       duration: duration || 'N/A',
       aspect_ratio: aspect_ratio || '16:9',
       tags: normalizeTags(tags),
